@@ -1,0 +1,5 @@
+streamlit==1.44.1
+google-genai==1.9.0
+requests==2.31.0        # untuk komunikasi ke retrieval_service (FastAPI)
+pandas==2.2.2           # untuk manipulasi hasil query (opsional, tapi sangat umum)
+psycopg2-binary==2.9.9

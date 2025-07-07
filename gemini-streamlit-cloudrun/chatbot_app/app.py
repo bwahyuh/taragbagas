@@ -7,10 +7,23 @@ import os
 
 from google import genai
 import google.auth
-from google.genai.types import GenerateContentConfig, Part, ThinkingConfig
+from google.genai.types import GenerateContentConfig, Part, ThinkingConfig, EmbedContentConfig
 import httpx
 import streamlit as st
+import psycopg2
+import pandas as pd
+import textwrap # Untuk memotong teks
+import time
 
+
+# Koneksi dibuat sekali, bisa dipakai semua tab
+conn = psycopg2.connect(
+    host="34.50.104.207",
+    port="5432",
+    database="postgres",
+    user="postgres",
+    password="bagaswahyu"
+)
 
 def _project_id() -> str:
     """Use the Google Auth helper (via the metadata service) to get the Google Cloud Project"""
@@ -86,9 +99,73 @@ def get_model_name(name: str | None) -> str:
     return MODELS.get(name, "Gemini")
 
 
+# --- Helper Functions (Moved outside tabs for reusability) ---
+
+# 1. Definisikan fungsi dialog
+@st.dialog("Detail Produk", width="large")
+def show_product_details(shoe_data):
+    """Menampilkan detail lengkap produk dan tombol order fiktif."""
+    st.markdown(f"### {shoe_data['title']}")
+    st.image(shoe_data['image_path'], use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**Merek:**")
+        st.markdown(f"**_{shoe_data['brand']}_**")
+    with col2:
+        st.markdown(f"**Harga:**")
+        st.markdown(f"**_{shoe_data['price']}_**")
+
+    st.markdown("---")
+
+    with st.expander("Lihat Detail Produk"):
+        st.write(shoe_data['product_details_clean'])
+    
+    with st.expander("Fitur"):
+        st.write(shoe_data['features_clean'])
+    
+    st.markdown("---")
+    
+    order_col, close_col = st.columns([1, 1])
+    with order_col:
+        if st.button("🛒 Order Sekarang", type="primary", use_container_width=True, key=f"order_{shoe_data['title']}"):
+            st.toast(f"🎉 Pesanan untuk '{shoe_data['title']}' telah diterima!", icon="✅")
+            time.sleep(2)
+            st.rerun()
+    with close_col:
+        if st.button("Tutup", use_container_width=True, key=f"close_{shoe_data['title']}"):
+            st.rerun()
+
+# 2. Fungsi untuk menampilkan grid produk
+def display_product_grid(df, key_prefix=""):
+    """Menerima DataFrame dan menampilkannya dalam format grid 5 kolom."""
+    if df.empty:
+        return
+
+    n_cols = 5
+    n_rows = (len(df) + n_cols - 1) // n_cols
+
+    for i in range(n_rows):
+        cols = st.columns(n_cols)
+        for j in range(n_cols):
+            idx = i * n_cols + j
+            if idx < len(df):
+                shoe = df.iloc[idx]
+                with cols[j]:
+                    truncated_title = textwrap.shorten(shoe['title'], width=40, placeholder="...")
+                    st.markdown(f"**{truncated_title}**")
+                    st.markdown(f"_{shoe['price']}_")
+                    st.image(shoe['image_path'], width=150)
+                    
+                    if st.button("Lihat Detail", key=f"{key_prefix}_btn_{shoe['title']}_{idx}"):
+                        show_product_details(shoe.to_dict())
+                    
+                    st.markdown("---")
+
+
 st.link_button(
     "View on GitHub",
-    "https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/sample-apps/gemini-streamlit-cloudrun",
+    "https://github.com/bwahyuh/taragbagas",
 )
 
 cloud_run_service = os.environ.get("K_SERVICE")
@@ -133,13 +210,19 @@ thinking_config = (
     if thinking_budget is not None
     else None
 )
-freeform_tab, tab1, tab2, tab3, tab4 = st.tabs(
+freeform_tab, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(
     [
         "✍️ Freeform",
         "📖 Generate Story",
         "📢 Marketing Campaign",
         "🖼️ Image Playground",
         "🎬 Video Playground",
+        "Content Based Recsys",
+        "Semantic Recsys",
+        "playtab7",
+        "playtab8",
+        "playtab9",
+        "playtab10"
     ]
 )
 
@@ -841,3 +924,167 @@ Provide the answer in table format.
             with tab2:
                 st.write("Prompt used:")
                 st.code(prompt, language="markdown")
+
+
+with tab5:
+    # --- UI Utama & Logika State ---
+    st.subheader("Recommendation System (Content-Based) - Text")
+    st.info("💡 Jelajahi produk di bawah, atau masukkan nama sepatu untuk mendapatkan rekomendasi yang lebih personal.")
+
+    selected_shoe_name = st.text_input(
+        "Rekomendasikan saya sepatu yang mirip dengan:",
+        key="selected_shoe_tab5"
+    )
+
+    recommend_button = st.button("Recommend", key="recommend_button_tab5")
+
+    # Inisialisasi session state
+    if 'recommendations' not in st.session_state:
+        st.session_state.recommendations = None
+    if 'matched_shoe_title' not in st.session_state:
+        st.session_state.matched_shoe_title = None
+    # State baru untuk produk acak
+    if 'random_products' not in st.session_state:
+        st.session_state.random_products = None
+
+    # Logika Pencarian (hanya berjalan saat tombol ditekan)
+    if recommend_button and selected_shoe_name:
+        with st.spinner(f"Mencari produk yang cocok dengan '{selected_shoe_name}'..."):
+            try:
+                cur = conn.cursor()
+                emb_query = "SELECT qwen3_embedding, title FROM products WHERE LOWER(title) LIKE %s LIMIT 1"
+                search_term = f"%{selected_shoe_name.lower()}%"
+                cur.execute(emb_query, (search_term,))
+                result = cur.fetchone()
+
+                if not result:
+                    st.warning("Tidak ada sepatu yang cocok dengan nama tersebut di database.")
+                    st.session_state.recommendations = pd.DataFrame()
+                    st.session_state.matched_shoe_title = None
+                else:
+                    shoe_embedding, matched_title = result
+                    st.session_state.matched_shoe_title = matched_title
+                    st.info(f"Ditemukan: '{matched_title}'. Mencari rekomendasi yang mirip...")
+                    rec_query = """
+                        SELECT 
+                            title, image_path, brand, price, 
+                            product_details_clean, features_clean, breadcrumbs_clean
+                        FROM products
+                        WHERE qwen3_embedding IS NOT NULL AND title != %s
+                        ORDER BY qwen3_embedding <=> %s ASC
+                        LIMIT 20
+                    """
+                    df_shoes = pd.read_sql(rec_query, conn, params=(matched_title, shoe_embedding))
+                    st.session_state.recommendations = df_shoes
+            except Exception as e:
+                st.error(f"Terjadi kesalahan saat mengambil data: {e}")
+                st.session_state.recommendations = None
+    # Jika tombol ditekan tapi input kosong, reset ke tampilan acak
+    elif recommend_button and not selected_shoe_name:
+        st.session_state.recommendations = None
+        st.session_state.matched_shoe_title = None
+
+
+    # --- Logika Tampilan (Render) ---
+    # Cek apakah kita harus menampilkan hasil rekomendasi atau produk acak
+    if st.session_state.get('recommendations') is not None:
+        # State 2: Tampilkan hasil rekomendasi
+        st.success(f"Menampilkan rekomendasi teratas untuk '{st.session_state.matched_shoe_title}':")
+        display_product_grid(st.session_state.recommendations, key_prefix="tab5")
+    else:
+        # State 1: Tampilkan produk acak
+        # Ambil produk acak sekali saja dan simpan di session_state
+        if st.session_state.get('random_products') is None:
+            with st.spinner("Memuat produk..."):
+                try:
+                    random_query = "SELECT title, image_path, brand, price, product_details_clean, features_clean, breadcrumbs_clean FROM products ORDER BY RANDOM() LIMIT 20"
+                    st.session_state.random_products = pd.read_sql(random_query, conn)
+                except Exception as e:
+                    st.error(f"Gagal memuat produk acak: {e}")
+        
+        st.subheader("Jelajahi Produk Kami")
+        if st.session_state.random_products is not None:
+            display_product_grid(st.session_state.random_products, key_prefix="tab5_random")
+
+with tab6:
+    # --- UI Utama & Logika State ---
+    st.subheader("Recommendation System (Semantic Search)")
+    st.info("💡 Describe the product you're looking for in natural language (e.g., 'comfortable sandals for summer travel').")
+
+    # Menggunakan text_area untuk input yang lebih panjang
+    semantic_search_term = st.text_area(
+        "Describe the product you are looking for:",
+        key="semantic_search_tab6",
+        height=100
+    )
+
+    semantic_recommend_button = st.button("Recommend", key="semantic_recommend_button_tab6")
+
+    # Inisialisasi session state untuk tab6
+    if 'semantic_recommendations' not in st.session_state:
+        st.session_state.semantic_recommendations = None
+    if 'semantic_random_products' not in st.session_state:
+        st.session_state.semantic_random_products = None
+
+    # Logika Pencarian (hanya berjalan saat tombol ditekan)
+    if semantic_recommend_button and semantic_search_term:
+        with st.spinner("Generating embedding for your query and searching for products..."):
+            try:
+                # 1. Ubah input pengguna menjadi vektor
+                embedding_config = EmbedContentConfig(output_dimensionality=1024)
+                embedding_response = client.models.embed_content(
+                    model="gemini-embedding-001",
+                    contents=semantic_search_term,
+                    config=embedding_config,
+                )
+                input_vector = embedding_response.embeddings[0].values
+
+                # 2. Query database untuk mencari kemiripan
+                if input_vector:
+                    # PERBAIKAN: Ubah list menjadi string dan tambahkan ::vector
+                    vector_string = str(input_vector)
+                    
+                    rec_query = """
+                        SELECT 
+                            title, image_path, brand, price, 
+                            product_details_clean, features_clean, breadcrumbs_clean
+                        FROM products
+                        WHERE qwen3_embedding IS NOT NULL
+                        ORDER BY qwen3_embedding <=> %s::vector ASC
+                        LIMIT 20
+                    """
+                    
+                    # Gunakan pd.read_sql karena lebih sederhana untuk query SELECT
+                    df_shoes = pd.read_sql(rec_query, conn, params=(vector_string,))
+
+                    st.session_state.semantic_recommendations = df_shoes
+                else:
+                    st.warning("Could not generate an embedding for the query.")
+                    st.session_state.semantic_recommendations = pd.DataFrame()
+
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+                st.session_state.semantic_recommendations = None
+    
+    # Jika tombol ditekan tapi input kosong, reset ke tampilan acak
+    elif semantic_recommend_button and not semantic_search_term:
+        st.session_state.semantic_recommendations = None
+
+    # --- Logika Tampilan (Render) ---
+    if st.session_state.get('semantic_recommendations') is not None:
+        # State 2: Tampilkan hasil rekomendasi
+        st.success(f"Showing recommendations based on your description:")
+        display_product_grid(st.session_state.semantic_recommendations, key_prefix="tab6")
+    else:
+        # State 1: Tampilkan produk acak
+        if st.session_state.get('semantic_random_products') is None:
+            with st.spinner("Loading products..."):
+                try:
+                    random_query = "SELECT title, image_path, brand, price, product_details_clean, features_clean, breadcrumbs_clean FROM products ORDER BY RANDOM() LIMIT 20"
+                    st.session_state.semantic_random_products = pd.read_sql(random_query, conn)
+                except Exception as e:
+                    st.error(f"Failed to load random products: {e}")
+        
+        st.subheader("Explore Our Products")
+        if st.session_state.semantic_random_products is not None:
+            display_product_grid(st.session_state.semantic_random_products, key_prefix="tab6_random")

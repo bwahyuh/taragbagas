@@ -9,6 +9,6 @@ CREATE TABLE products (
     features_clean TEXT,
     breadcrumbs_clean TEXT,
     qwen3_embedding vector(1024),     -- untuk Qwen3-embedding-0.6B
-    image_embedding vector(1152),     -- untuk siglip
+    image_embedding vector(1024),     -- untuk siglip
     image_path TEXT
 );

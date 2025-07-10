@@ -15,15 +15,27 @@ import pandas as pd
 import textwrap # Untuk memotong teks
 import time
 
+# --- Library untuk Model SigLIP ---
+from transformers import AutoProcessor, AutoModel
+import torch
+from PIL import Image
 
 # Koneksi dibuat sekali, bisa dipakai semua tab
-conn = psycopg2.connect(
-    host="34.50.104.207",
-    port="5432",
-    database="postgres",
-    user="postgres",
-    password="bagaswahyu"
-)
+@st.cache_resource
+def get_db_connection():
+    """Gets a database connection and caches it for the session."""
+    try:
+        conn = psycopg2.connect(
+            host="34.50.104.207",
+            port="5432",
+            database="postgres",
+            user="postgres",
+            password="bagaswahyu"
+        )
+        return conn
+    except psycopg2.OperationalError as e:
+        st.error(f"🚨 Kesalahan Koneksi Database: Tidak dapat terhubung ke PostgreSQL. Pastikan database aktif dan kredensial sudah benar. Detail: {e}")
+        st.stop()
 
 def _project_id() -> str:
     """Use the Google Auth helper (via the metadata service) to get the Google Cloud Project"""
@@ -162,6 +174,17 @@ def display_product_grid(df, key_prefix=""):
                     
                     st.markdown("---")
 
+# PERBAIKAN: Menambahkan fungsi yang hilang
+@st.cache_data
+def get_random_products(_conn):
+    """Fetches 20 random products to display on the homepage and caches the result."""
+    try:
+        random_query = "SELECT * FROM products WHERE image_path IS NOT NULL ORDER BY RANDOM() LIMIT 20"
+        return pd.read_sql(random_query, _conn)
+    except Exception as e:
+        st.warning(f"Tidak dapat memuat produk acak. Detail: {e}")
+        return pd.DataFrame()
+
 
 st.link_button(
     "View on GitHub",
@@ -175,8 +198,23 @@ if cloud_run_service:
         f"https://console.cloud.google.com/run/detail/us-central1/{cloud_run_service}/source",
     )
 
-st.header(":sparkles: Gemini API in Vertex AI", divider="rainbow")
+# --- LOGIKA MODEL SIGLIP ---
+@st.cache_resource
+def load_siglip_model():
+    """Memuat model dan prosesor SigLIP dan menyimpannya di cache."""
+    model_name = "google/siglip-so400m-patch14-384"
+    # Menggunakan float32 untuk kompatibilitas CPU di Cloud Run
+    model = AutoModel.from_pretrained(model_name, torch_dtype=torch.float32)
+    processor = AutoProcessor.from_pretrained(model_name)
+    return model, processor
+
+# --- Tampilan Utama Aplikasi ---
+st.header("👟 Shoe Recommendation System", divider="rainbow")
 client = load_client()
+
+# Memuat koneksi dan model saat aplikasi dimulai
+conn = get_db_connection()
+siglip_model, siglip_processor = load_siglip_model()
 
 selected_model = st.radio(
     "Select Model:",
@@ -210,21 +248,21 @@ thinking_config = (
     if thinking_budget is not None
     else None
 )
-freeform_tab, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(
-    [
-        "✍️ Freeform",
-        "📖 Generate Story",
-        "📢 Marketing Campaign",
-        "🖼️ Image Playground",
-        "🎬 Video Playground",
-        "Content Based Recsys",
-        "Semantic Recsys",
-        "playtab7",
-        "playtab8",
-        "playtab9",
-        "playtab10"
-    ]
-)
+# PERBAIKAN: Menambahkan koma yang hilang untuk memperbaiki ValueError
+tab_list = [
+    "✍️ Freeform",
+    "📖 Generate Story",
+    "📢 Marketing Campaign",
+    "🖼️ Image Playground",
+    "🎬 Video Playground",
+    "🛒 Recsys (Keyword)",
+    "🗣️ Recsys (Semantic Text)",
+    "📸 Recsys (Multimodal)",
+    "playtab8",
+    "playtab9",
+    "playtab10"
+]
+freeform_tab, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(tab_list)
 
 with freeform_tab:
     st.subheader("Enter Your Own Prompt")
@@ -926,165 +964,130 @@ Provide the answer in table format.
                 st.code(prompt, language="markdown")
 
 
+# --- TAB 5: KEYWORD SEARCH ---
 with tab5:
-    # --- UI Utama & Logika State ---
-    st.subheader("Recommendation System (Content-Based) - Text")
-    st.info("💡 Jelajahi produk di bawah, atau masukkan nama sepatu untuk mendapatkan rekomendasi yang lebih personal.")
+    st.subheader("Pencarian Berdasarkan Nama Produk")
+    st.info("💡 Masukkan sebagian nama sepatu (contoh: 'running shoes') untuk mencari rekomendasi.")
+    
+    selected_shoe_name = st.text_input("Rekomendasikan sepatu yang mirip dengan:", key="keyword_search")
+    recommend_button = st.button("Recommend", key="keyword_recommend_button")
 
-    selected_shoe_name = st.text_input(
-        "Rekomendasikan saya sepatu yang mirip dengan:",
-        key="selected_shoe_tab5"
-    )
+    if 'keyword_recommendations' not in st.session_state:
+        st.session_state.keyword_recommendations = None
+    if 'keyword_matched_title' not in st.session_state:
+        st.session_state.keyword_matched_title = None
 
-    recommend_button = st.button("Recommend", key="recommend_button_tab5")
-
-    # Inisialisasi session state
-    if 'recommendations' not in st.session_state:
-        st.session_state.recommendations = None
-    if 'matched_shoe_title' not in st.session_state:
-        st.session_state.matched_shoe_title = None
-    # State baru untuk produk acak
-    if 'random_products' not in st.session_state:
-        st.session_state.random_products = None
-
-    # Logika Pencarian (hanya berjalan saat tombol ditekan)
     if recommend_button and selected_shoe_name:
         with st.spinner(f"Mencari produk yang cocok dengan '{selected_shoe_name}'..."):
             try:
                 cur = conn.cursor()
-                emb_query = "SELECT qwen3_embedding, title FROM products WHERE LOWER(title) LIKE %s LIMIT 1"
+                emb_query = "SELECT text_embedding, title FROM products WHERE LOWER(title) LIKE %s LIMIT 1"
                 search_term = f"%{selected_shoe_name.lower()}%"
                 cur.execute(emb_query, (search_term,))
                 result = cur.fetchone()
 
                 if not result:
                     st.warning("Tidak ada sepatu yang cocok dengan nama tersebut di database.")
-                    st.session_state.recommendations = pd.DataFrame()
-                    st.session_state.matched_shoe_title = None
+                    st.session_state.keyword_recommendations = pd.DataFrame()
                 else:
                     shoe_embedding, matched_title = result
-                    st.session_state.matched_shoe_title = matched_title
+                    st.session_state.keyword_matched_title = matched_title
                     st.info(f"Ditemukan: '{matched_title}'. Mencari rekomendasi yang mirip...")
-                    rec_query = """
-                        SELECT 
-                            title, image_path, brand, price, 
-                            product_details_clean, features_clean, breadcrumbs_clean
-                        FROM products
-                        WHERE qwen3_embedding IS NOT NULL AND title != %s
-                        ORDER BY qwen3_embedding <=> %s ASC
-                        LIMIT 20
-                    """
+                    rec_query = "SELECT * FROM products WHERE text_embedding IS NOT NULL AND title != %s ORDER BY text_embedding <=> %s ASC LIMIT 20"
                     df_shoes = pd.read_sql(rec_query, conn, params=(matched_title, shoe_embedding))
-                    st.session_state.recommendations = df_shoes
+                    st.session_state.keyword_recommendations = df_shoes
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat mengambil data: {e}")
-                st.session_state.recommendations = None
-    # Jika tombol ditekan tapi input kosong, reset ke tampilan acak
+                st.session_state.keyword_recommendations = None
     elif recommend_button and not selected_shoe_name:
-        st.session_state.recommendations = None
-        st.session_state.matched_shoe_title = None
+        st.session_state.keyword_recommendations = None
 
-
-    # --- Logika Tampilan (Render) ---
-    # Cek apakah kita harus menampilkan hasil rekomendasi atau produk acak
-    if st.session_state.get('recommendations') is not None:
-        # State 2: Tampilkan hasil rekomendasi
-        st.success(f"Menampilkan rekomendasi teratas untuk '{st.session_state.matched_shoe_title}':")
-        display_product_grid(st.session_state.recommendations, key_prefix="tab5")
+    if st.session_state.get('keyword_recommendations') is not None:
+        st.success(f"Menampilkan rekomendasi teratas untuk '{st.session_state.keyword_matched_title}':")
+        display_product_grid(st.session_state.keyword_recommendations, key_prefix="keyword")
     else:
-        # State 1: Tampilkan produk acak
-        # Ambil produk acak sekali saja dan simpan di session_state
-        if st.session_state.get('random_products') is None:
-            with st.spinner("Memuat produk..."):
-                try:
-                    random_query = "SELECT title, image_path, brand, price, product_details_clean, features_clean, breadcrumbs_clean FROM products ORDER BY RANDOM() LIMIT 20"
-                    st.session_state.random_products = pd.read_sql(random_query, conn)
-                except Exception as e:
-                    st.error(f"Gagal memuat produk acak: {e}")
-        
         st.subheader("Jelajahi Produk Kami")
-        if st.session_state.random_products is not None:
-            display_product_grid(st.session_state.random_products, key_prefix="tab5_random")
+        random_products = get_random_products(conn)
+        display_product_grid(random_products, key_prefix="keyword_random")
 
+# --- TAB 6: SEMANTIC SEARCH ---
 with tab6:
-    # --- UI Utama & Logika State ---
-    st.subheader("Recommendation System (Semantic Search)")
-    st.info("💡 Describe the product you're looking for in natural language (e.g., 'comfortable sandals for summer travel').")
+    st.subheader("Pencarian Berdasarkan Deskripsi (Teks)")
+    st.info("💡 Jelaskan produk yang Anda cari, contoh: 'sandal nyaman untuk traveling musim panas'.")
+    
+    semantic_search_term = st.text_area("Deskripsikan produk yang Anda cari:", key="semantic_search", height=100)
+    semantic_recommend_button = st.button("Recommend", key="semantic_recommend_button")
 
-    # Menggunakan text_area untuk input yang lebih panjang
-    semantic_search_term = st.text_area(
-        "Describe the product you are looking for:",
-        key="semantic_search_tab6",
-        height=100
-    )
-
-    semantic_recommend_button = st.button("Recommend", key="semantic_recommend_button_tab6")
-
-    # Inisialisasi session state untuk tab6
     if 'semantic_recommendations' not in st.session_state:
         st.session_state.semantic_recommendations = None
-    if 'semantic_random_products' not in st.session_state:
-        st.session_state.semantic_random_products = None
 
-    # Logika Pencarian (hanya berjalan saat tombol ditekan)
     if semantic_recommend_button and semantic_search_term:
-        with st.spinner("Generating embedding for your query and searching for products..."):
+        with st.spinner("Menganalisis deskripsi Anda dan mencari produk..."):
             try:
-                # 1. Ubah input pengguna menjadi vektor
-                embedding_config = EmbedContentConfig(output_dimensionality=1024)
-                embedding_response = client.models.embed_content(
-                    model="gemini-embedding-001",
-                    contents=semantic_search_term,
-                    config=embedding_config,
-                )
-                input_vector = embedding_response.embeddings[0].values
-
-                # 2. Query database untuk mencari kemiripan
+                inputs = siglip_processor(text=[semantic_search_term], return_tensors="pt", padding="max_length")
+                with torch.no_grad():
+                    input_vector = siglip_model.get_text_features(**inputs).squeeze(0).tolist()
+                
                 if input_vector:
-                    # PERBAIKAN: Ubah list menjadi string dan tambahkan ::vector
                     vector_string = str(input_vector)
-                    
-                    rec_query = """
-                        SELECT 
-                            title, image_path, brand, price, 
-                            product_details_clean, features_clean, breadcrumbs_clean
-                        FROM products
-                        WHERE qwen3_embedding IS NOT NULL
-                        ORDER BY qwen3_embedding <=> %s::vector ASC
-                        LIMIT 20
-                    """
-                    
-                    # Gunakan pd.read_sql karena lebih sederhana untuk query SELECT
+                    rec_query = "SELECT * FROM products WHERE text_embedding IS NOT NULL ORDER BY text_embedding <=> %s::vector ASC LIMIT 20"
                     df_shoes = pd.read_sql(rec_query, conn, params=(vector_string,))
-
                     st.session_state.semantic_recommendations = df_shoes
                 else:
-                    st.warning("Could not generate an embedding for the query.")
+                    st.warning("Tidak dapat membuat pemahaman dari deskripsi Anda.")
                     st.session_state.semantic_recommendations = pd.DataFrame()
-
             except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.session_state.semantic_recommendations = None
-    
-    # Jika tombol ditekan tapi input kosong, reset ke tampilan acak
+                st.error(f"Terjadi kesalahan: {e}")
+                st.session_state.semantic_recommendations = pd.DataFrame()
     elif semantic_recommend_button and not semantic_search_term:
         st.session_state.semantic_recommendations = None
 
-    # --- Logika Tampilan (Render) ---
     if st.session_state.get('semantic_recommendations') is not None:
-        # State 2: Tampilkan hasil rekomendasi
-        st.success(f"Showing recommendations based on your description:")
-        display_product_grid(st.session_state.semantic_recommendations, key_prefix="tab6")
+        st.success("Menampilkan rekomendasi berdasarkan deskripsi Anda:")
+        display_product_grid(st.session_state.semantic_recommendations, key_prefix="semantic")
     else:
-        # State 1: Tampilkan produk acak
-        if st.session_state.get('semantic_random_products') is None:
-            with st.spinner("Loading products..."):
-                try:
-                    random_query = "SELECT title, image_path, brand, price, product_details_clean, features_clean, breadcrumbs_clean FROM products ORDER BY RANDOM() LIMIT 20"
-                    st.session_state.semantic_random_products = pd.read_sql(random_query, conn)
-                except Exception as e:
-                    st.error(f"Failed to load random products: {e}")
-        
-        st.subheader("Explore Our Products")
-        if st.session_state.semantic_random_products is not None:
-            display_product_grid(st.session_state.semantic_random_products, key_prefix="tab6_random")
+        st.subheader("Jelajahi Produk Kami")
+        random_products = get_random_products(conn)
+        display_product_grid(random_products, key_prefix="semantic_random")
+
+# --- TAB 7: MULTIMODAL SEARCH ---
+with tab7:
+    st.subheader("Pencarian Berdasarkan Gambar")
+    st.info("💡 Unggah gambar produk untuk menemukan produk yang mirip secara visual.")
+    
+    uploaded_image = st.file_uploader("Unggah gambar produk...", type=["jpg", "jpeg", "png"], key="image_upload")
+    multimodal_recommend_button = st.button("Find Similar Products", key="multimodal_recommend_button")
+
+    if 'multimodal_recommendations' not in st.session_state:
+        st.session_state.multimodal_recommendations = None
+
+    if multimodal_recommend_button and uploaded_image is not None:
+        with st.spinner("Menganalisis gambar dan mencari produk serupa..."):
+            try:
+                image = Image.open(uploaded_image).convert("RGB")
+                inputs = siglip_processor(images=[image], return_tensors="pt")
+                with torch.no_grad():
+                    input_vector = siglip_model.get_image_features(**inputs).squeeze(0).tolist()
+
+                if input_vector:
+                    vector_string = str(input_vector)
+                    rec_query = "SELECT * FROM products WHERE image_embedding IS NOT NULL ORDER BY image_embedding <=> %s::vector ASC LIMIT 20"
+                    df_shoes = pd.read_sql(rec_query, conn, params=(vector_string,))
+                    st.session_state.multimodal_recommendations = df_shoes
+                else:
+                    st.warning("Tidak dapat membuat pemahaman dari gambar Anda.")
+                    st.session_state.multimodal_recommendations = pd.DataFrame()
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")
+                st.session_state.multimodal_recommendations = pd.DataFrame()
+    elif multimodal_recommend_button and uploaded_image is None:
+        st.warning("Silakan unggah gambar terlebih dahulu.")
+        st.session_state.multimodal_recommendations = None
+
+    if st.session_state.get('multimodal_recommendations') is not None:
+        st.success("Menampilkan rekomendasi berdasarkan gambar Anda:")
+        display_product_grid(st.session_state.multimodal_recommendations, key_prefix="multimodal")
+    else:
+        st.subheader("Jelajahi Produk Kami")
+        random_products = get_random_products(conn)
+        display_product_grid(random_products, key_prefix="multimodal_random")

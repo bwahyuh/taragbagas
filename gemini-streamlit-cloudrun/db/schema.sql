@@ -8,7 +8,8 @@ CREATE TABLE products (
     product_details_clean TEXT,
     features_clean TEXT,
     breadcrumbs_clean TEXT,
-    qwen3_embedding vector(1024),     -- untuk Qwen3-embedding-0.6B
-    image_embedding vector(1024),     -- untuk siglip
-    image_path TEXT
+    text_embedding vector(1152),     -- untuk siglip txt
+    image_embedding vector(1152),     -- untuk siglip img
+    image_path TEXT,
+    combined_text TEXT
 );

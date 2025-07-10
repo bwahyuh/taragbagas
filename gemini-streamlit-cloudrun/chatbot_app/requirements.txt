@@ -1,6 +1,14 @@
-streamlit==1.44.1
-google-genai==1.9.0
-requests==2.31.0        # untuk komunikasi ke retrieval_service (FastAPI)
-pandas==2.2.2           # untuk manipulasi hasil query (opsional, tapi sangat umum)
-psycopg2-binary==2.9.9
-streamlit-modal
+# Main Streamlit and Google Cloud libraries
+streamlit
+google-cloud-aiplatform
+google-auth
+httpx
+psycopg2-binary
+pandas
+
+# Libraries for SigLIP model
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+transformers
+Pillow
+sentencepiece

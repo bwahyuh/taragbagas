@@ -2,7 +2,6 @@
 """
 This module demonstrates the usage of the Gemini API in Vertex AI within a Streamlit application.
 """
-
 import os
 
 from google import genai
@@ -10,6 +9,12 @@ import google.auth
 from google.genai.types import GenerateContentConfig, Part, ThinkingConfig, EmbedContentConfig
 import httpx
 import streamlit as st
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
+# --- Konfigurasi Global Aplikasi ---
+PROJECT_ID = "taragbagas-465109"  # Ganti dengan Project ID Anda
+LOCATION = "us-central1"           # Ganti dengan region Anda, misal: asia-southeast1
+# Kita tidak lagi butuh GenerateContentConfig atau ThinkingConfig di sini
 import psycopg2
 import pandas as pd
 import textwrap # Untuk memotong teks
@@ -19,6 +24,19 @@ import time
 from transformers import AutoProcessor, AutoModel
 import torch
 from PIL import Image
+
+# 2. Minta kredensial secara eksplisit dengan cakupan (scope) yang benar
+try:
+    credentials, _ = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+except Exception as e:
+    st.error(f"Gagal melakukan inisialisasi awal Vertex AI: {e}")
+    st.stop()
+
+# 3. Inisialisasi Vertex AI dengan kredensial eksplisit tersebut
+vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
 
 # Koneksi dibuat sekali, bisa dipakai semua tab
 @st.cache_resource
@@ -259,7 +277,7 @@ tab_list = [
     "🗣️ Recsys (Semantic Text)",
     "📸 Recsys (Image)",
     "📸 + ✍️ Recsys (Multimodal)",
-    "playtab9",
+    "🤖 RAG Chat",
     "playtab10"
 ]
 freeform_tab, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(tab_list)
@@ -579,17 +597,17 @@ with tab3:
         content = [
             "Consider the following chairs:",
             "chair 1:",
-            Part.from_uri(file_uri=chair_1_image_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=chair_1_image_uri, mime_type="image/jpeg"),
             "chair 2:",
-            Part.from_uri(file_uri=chair_2_image_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=chair_2_image_uri, mime_type="image/jpeg"),
             "chair 3:",
-            Part.from_uri(file_uri=chair_3_image_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=chair_3_image_uri, mime_type="image/jpeg"),
             "and",
             "chair 4:",
-            Part.from_uri(file_uri=chair_4_image_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=chair_4_image_uri, mime_type="image/jpeg"),
             "\n"
             "For each chair, explain why it would be suitable or not suitable for the following room:",
-            Part.from_uri(file_uri=room_image_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=room_image_uri, mime_type="image/jpeg"),
             "Only recommend for the room provided and not other rooms. Provide your recommendation in a table format with chair name and reason as columns.",
         ]
 
@@ -637,7 +655,7 @@ If instructions include buttons, also explain where those buttons are physically
                         model=selected_model,
                         contents=[
                             Part.from_uri(
-                                file_uri=stove_screen_uri, mime_type="image/jpeg"
+                                uri=stove_screen_uri, mime_type="image/jpeg"
                             ),
                             prompt,
                         ],
@@ -666,7 +684,7 @@ If instructions include buttons, also explain where those buttons are physically
                     response = client.models.generate_content(
                         model=selected_model,
                         contents=[
-                            Part.from_uri(file_uri=er_diag_uri, mime_type="image/jpeg"),
+                            Part.from_uri(uri=er_diag_uri, mime_type="image/jpeg"),
                             prompt,
                         ],
                     ).text
@@ -706,10 +724,10 @@ If instructions include buttons, also explain where those buttons are physically
             f"""Which of these glasses you recommend for me based on the shape of my face:{face_type}?
       I have an {face_type} shape face.
       Glasses 1: """,
-            Part.from_uri(file_uri=compare_img_1_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=compare_img_1_uri, mime_type="image/jpeg"),
             """
       Glasses 2: """,
-            Part.from_uri(file_uri=compare_img_2_uri, mime_type="image/jpeg"),
+            Part.from_uri(uri=compare_img_2_uri, mime_type="image/jpeg"),
             f"""
       Explain how you made to this decision.
       Provide your recommendation based on my face shape, and reasoning for each in {output_type} format.
@@ -727,7 +745,7 @@ If instructions include buttons, also explain where those buttons are physically
                     response = client.models.generate_content(
                         model=selected_model,
                         contents=[
-                            Part.from_uri(file_uri=er_diag_uri, mime_type="image/jpeg"),
+                            Part.from_uri(uri=er_diag_uri, mime_type="image/jpeg"),
                             content,
                         ],
                     ).text
@@ -774,7 +792,7 @@ INSTRUCTIONS:
                         model=selected_model,
                         contents=[
                             Part.from_uri(
-                                file_uri=math_image_uri, mime_type="image/jpeg"
+                                uri=math_image_uri, mime_type="image/jpeg"
                             ),
                             prompt,
                         ],
@@ -824,7 +842,7 @@ with tab4:
                             model=selected_model,
                             contents=[
                                 Part.from_uri(
-                                    file_uri=video_desc_uri, mime_type="video/mp4"
+                                    uri=video_desc_uri, mime_type="video/mp4"
                                 ),
                                 prompt,
                             ],
@@ -864,7 +882,7 @@ with tab4:
                             model=selected_model,
                             contents=[
                                 Part.from_uri(
-                                    file_uri=video_tags_uri, mime_type="video/mp4"
+                                    uri=video_tags_uri, mime_type="video/mp4"
                                 ),
                                 prompt,
                             ],
@@ -903,7 +921,7 @@ Provide the answer in table format.
                             model=selected_model,
                             contents=[
                                 Part.from_uri(
-                                    file_uri=video_highlights_uri, mime_type="video/mp4"
+                                    uri=video_highlights_uri, mime_type="video/mp4"
                                 ),
                                 prompt,
                             ],
@@ -951,7 +969,7 @@ Provide the answer in table format.
                             model=selected_model,
                             contents=[
                                 Part.from_uri(
-                                    file_uri=video_geolocation_uri,
+                                    uri=video_geolocation_uri,
                                     mime_type="video/mp4",
                                 ),
                                 prompt,
@@ -1179,3 +1197,138 @@ with tab8:
         st.subheader("Jelajahi Produk Kami")
         random_products = get_random_products(conn)
         display_product_grid(random_products, key_prefix="multimodal_mix_random")
+
+# --- TAB 9: RAG-BASED CHAT APPLICATION (MULTIMODAL FINAL) ---
+with tab9:
+    # --- Main Application ---
+    st.subheader("🤖 Chat Asisten Belanja Cerdas")
+    st.info("Anda bisa bertanya menggunakan teks atau mengunggah gambar produk untuk menemukan barang serupa!")
+
+    # Inisialisasi & Tampilan Chat History
+    if "rag_messages" not in st.session_state:
+        st.session_state.rag_messages = [{"role": "assistant", "content": "Halo! Ada yang bisa saya bantu terkait produk sepatu kami? Anda bisa bertanya atau unggah gambar."}]
+    
+    # 1. Tampilkan seluruh history percakapan
+    for message in st.session_state.rag_messages:
+        content = message["content"]
+        with st.chat_message(message["role"]):
+            # Jika konten adalah sapaan awal (string)
+            if isinstance(content, str):
+                st.markdown(content)
+            # Jika konten adalah pesan terstruktur (dictionary)
+            elif isinstance(content, dict):
+                # Tampilan untuk pesan PENGGUNA (mungkin ada gambar)
+                if "text" in content:
+                    if content.get("image_bytes"):
+                        st.image(content["image_bytes"], width=200, caption="Gambar yang Anda unggah")
+                    st.markdown(content["text"])
+                # Tampilan untuk respons ASISTEN (reasoning + grid produk)
+                elif "reasoning" in content:
+                    st.markdown(content["reasoning"])
+                    if not content["recommendations_df"].empty:
+                        display_product_grid(content["recommendations_df"], key_prefix="rag_multi")
+                    else:
+                        st.write("Tidak ada produk spesifik yang cocok untuk direkomendasikan.")
+
+    # 2. Area Input (uploader dan chat input)
+    uploaded_image = st.file_uploader("Unggah gambar untuk mencari produk serupa", type=["png", "jpg", "jpeg"])
+    
+    if prompt := st.chat_input("Tulis pertanyaan atau deskripsikan gambar..."):
+        user_message_content = {"text": prompt}
+        if uploaded_image is not None:
+            user_message_content["image_bytes"] = uploaded_image.getvalue()
+        
+        st.session_state.rag_messages.append({"role": "user", "content": user_message_content})
+        st.rerun()
+
+    # 3. Proses pesan terakhir dari user jika belum diproses
+    last_message = st.session_state.rag_messages[-1]
+    if last_message["role"] == "user" and not last_message.get("processed", False):
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Mencari & menganalisis produk..."):
+                
+                user_content = last_message["content"]
+                prompt_text = user_content["text"]
+                image_bytes = user_content.get("image_bytes")
+                
+                context_df = pd.DataFrame()
+                try:
+                    # Logika Multimodal: Gunakan embedding gambar jika ada, jika tidak, gunakan teks
+                    if image_bytes:
+                        st.info("🔎 Mencari berdasarkan kemiripan gambar...")
+                        from PIL import Image
+                        import io
+                        input_image = Image.open(io.BytesIO(image_bytes))
+                        image_inputs = siglip_processor(images=[input_image], return_tensors="pt")
+                        with torch.no_grad():
+                            query_vector = siglip_model.get_image_features(**image_inputs).squeeze(0).tolist()
+                        search_query = "SELECT * FROM products ORDER BY image_embedding <=> %s::vector LIMIT 10;"
+                    else:
+                        st.info("🔎 Mencari berdasarkan deskripsi teks...")
+                        text_inputs = siglip_processor(text=[prompt_text], return_tensors="pt", padding="max_length")
+                        with torch.no_grad():
+                            query_vector = siglip_model.get_text_features(**text_inputs).squeeze(0).tolist()
+                        search_query = "SELECT * FROM products ORDER BY text_embedding <=> %s::vector LIMIT 10;"
+
+                    vector_string = str(query_vector)
+                    context_df = pd.read_sql(search_query, conn, params=(vector_string,))
+                    context_for_llm = context_df[['title', 'brand', 'price', 'product_details_clean']].to_string()
+
+                except Exception as e:
+                    st.error(f"Terjadi kesalahan saat mengambil data dari database: {e}")
+                    context_for_llm = "Tidak ada data yang ditemukan."
+
+                # Buat Prompt JSON yang "sadar konteks"
+                search_type_info = "berdasarkan gambar yang diunggah pengguna" if image_bytes else "berdasarkan deskripsi teks pengguna"
+                
+                final_prompt = f"""
+                PERINTAH: Anda adalah API yang mengembalikan format JSON. Jangan menulis teks atau penjelasan lain di luar blok JSON.
+                Tugas Anda adalah memberikan alasan dan merekomendasikan produk dari daftar KONTEKS. Pencarian produk ini dilakukan {search_type_info}.
+
+                ATURAN FORMAT JSON:
+                - Jawab HANYA dalam format JSON yang valid.
+                - Objek JSON harus memiliki dua kunci: "reasoning" dan "recommendations".
+                - "reasoning": (string) Penjelasan teks mengapa Anda merekomendasikan produk tersebut. Mulai kalimat Anda dengan menyatakan bahwa pencarian dilakukan berdasarkan gambar atau teks.
+                - "recommendations": (list) Daftar produk yang direkomendasikan. Setiap item adalah objek JSON yang HANYA berisi kunci "title".
+
+                ---
+                KONTEKS PRODUK:
+                {context_for_llm}
+                ---
+                PERTANYAAN PENGGUNA:
+                {prompt_text}
+                ---
+                JSON OUTPUT:
+                """
+                
+                # Panggil Model dan Proses Output
+                try:
+                    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+                    rag_model = GenerativeModel(selected_model)
+                    rag_config = {"temperature": 0.0, "max_output_tokens": 8192}
+                    
+                    response_text = rag_model.generate_content(final_prompt, generation_config=rag_config).text
+                    
+                    import json, re
+                    match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                    if not match: raise ValueError("Tidak ditemukan format JSON yang valid dalam respons AI.")
+                    
+                    parsed_response = json.loads(match.group(0))
+                    reasoning = parsed_response.get("reasoning", "Berikut rekomendasi saya.")
+                    recommended_titles = [rec.get("title") for rec in parsed_response.get("recommendations", [])]
+                    
+                    recommendations_df = context_df[context_df['title'].isin(recommended_titles)].copy()
+                    
+                    assistant_response_content = {
+                        "reasoning": reasoning,
+                        "recommendations_df": recommendations_df
+                    }
+                    # Tandai pesan user sebagai sudah diproses
+                    st.session_state.rag_messages[-1]["processed"] = True
+                    st.session_state.rag_messages.append({"role": "assistant", "content": assistant_response_content})
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Gagal memproses respons dari AI: {e}")
+                    st.code(response_text, language="text")

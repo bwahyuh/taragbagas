@@ -1,7 +1,0 @@
-datastore:
-  kind: "postgres"
-  host: "db_host"
-  port: 5432
-  database: "ecommerce-prod-db"
-  user: "postgres"
-  password: "bagaswahyu"

@@ -257,8 +257,8 @@ tab_list = [
     "🎬 Video Playground",
     "🛒 Recsys (Keyword)",
     "🗣️ Recsys (Semantic Text)",
-    "📸 Recsys (Multimodal)",
-    "playtab8",
+    "📸 Recsys (Image)",
+    "📸 + ✍️ Recsys (Multimodal)",
     "playtab9",
     "playtab10"
 ]
@@ -970,7 +970,7 @@ with tab5:
     st.info("💡 Masukkan sebagian nama sepatu (contoh: 'running shoes') untuk mencari rekomendasi.")
     
     selected_shoe_name = st.text_input("Rekomendasikan sepatu yang mirip dengan:", key="keyword_search")
-    recommend_button = st.button("Recommend", key="keyword_recommend_button")
+    recommend_button = st.button("Recommend Me!", key="keyword_recommend_button")
 
     if 'keyword_recommendations' not in st.session_state:
         st.session_state.keyword_recommendations = None
@@ -1016,7 +1016,7 @@ with tab6:
     st.info("💡 Jelaskan produk yang Anda cari, contoh: 'sandal nyaman untuk traveling musim panas'.")
     
     semantic_search_term = st.text_area("Deskripsikan produk yang Anda cari:", key="semantic_search", height=100)
-    semantic_recommend_button = st.button("Recommend", key="semantic_recommend_button")
+    semantic_recommend_button = st.button("Recommend Me!", key="semantic_recommend_button")
 
     if 'semantic_recommendations' not in st.session_state:
         st.session_state.semantic_recommendations = None
@@ -1056,7 +1056,7 @@ with tab7:
     st.info("💡 Unggah gambar produk untuk menemukan produk yang mirip secara visual.")
     
     uploaded_image = st.file_uploader("Unggah gambar produk...", type=["jpg", "jpeg", "png"], key="image_upload")
-    multimodal_recommend_button = st.button("Find Similar Products", key="multimodal_recommend_button")
+    multimodal_recommend_button = st.button("Recommend Me!", key="multimodal_recommend_button")
 
     if 'multimodal_recommendations' not in st.session_state:
         st.session_state.multimodal_recommendations = None
@@ -1091,3 +1091,91 @@ with tab7:
         st.subheader("Jelajahi Produk Kami")
         random_products = get_random_products(conn)
         display_product_grid(random_products, key_prefix="multimodal_random")
+
+# --- TAB 8: MULTIMODAL SEARCH  (Text - Image)---
+with tab8:
+    st.subheader("Pencarian Multimodal (Teks + Gambar)")
+    st.info("💡 Masukkan deskripsi produk dan/atau unggah gambar untuk mencari produk yang paling mirip.")
+
+    # Input gambar di atas input teks
+    multi_image = st.file_uploader(
+        "Unggah gambar produk:",
+        type=["jpg", "jpeg", "png"],
+        key="multi_image_upload_vertical"
+    )
+    if multi_image:
+        st.image(multi_image, caption="Preview gambar", width=220)
+    
+    multi_text = st.text_area(
+        "Deskripsikan produk:",
+        key="multi_text_input_vertical",
+        height=100
+    )
+
+    # Tombol di tengah bawah input
+    col_btn1, col_btn2, col_btn3 = st.columns([2, 3, 2])
+    with col_btn2:
+        multi_search_button = st.button(
+            "Recommend Me!",
+            key="multi_search_button_vertical",
+            use_container_width=True
+        )
+
+    if 'multimodal_mix_recommendations' not in st.session_state:
+        st.session_state.multimodal_mix_recommendations = None
+
+    if multi_search_button and (multi_text or multi_image is not None):
+        with st.spinner("Memproses pencarian multimodal..."):
+            try:
+                text_vector = None
+                image_vector = None
+
+                # Proses embedding teks jika ada input teks
+                if multi_text:
+                    text_inputs = siglip_processor(
+                        text=[multi_text], return_tensors="pt", padding="max_length"
+                    )
+                    with torch.no_grad():
+                        text_vector = siglip_model.get_text_features(**text_inputs).squeeze(0)
+                # Proses embedding gambar jika ada input gambar
+                if multi_image is not None:
+                    img = Image.open(multi_image).convert("RGB")
+                    img_inputs = siglip_processor(images=[img], return_tensors="pt")
+                    with torch.no_grad():
+                        image_vector = siglip_model.get_image_features(**img_inputs).squeeze(0)
+                # Gabungkan dua embedding jika keduanya ada
+                if text_vector is not None and image_vector is not None:
+                    combined_vector = (text_vector + image_vector) / 2
+                elif text_vector is not None:
+                    combined_vector = text_vector
+                elif image_vector is not None:
+                    combined_vector = image_vector
+                else:
+                    st.warning("Minimal satu input (teks/gambar) diperlukan!")
+                    st.session_state.multimodal_mix_recommendations = pd.DataFrame()
+                    combined_vector = None
+
+                if combined_vector is not None:
+                    vector_string = str(combined_vector.tolist())
+                    rec_query = (
+                        "SELECT * FROM products WHERE image_embedding IS NOT NULL "
+                        "ORDER BY image_embedding <=> %s::vector ASC LIMIT 20"
+                    )
+                    df_recs = pd.read_sql(rec_query, conn, params=(vector_string,))
+                    st.session_state.multimodal_mix_recommendations = df_recs
+                else:
+                    st.session_state.multimodal_mix_recommendations = pd.DataFrame()
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")
+                st.session_state.multimodal_mix_recommendations = pd.DataFrame()
+    elif multi_search_button and (not multi_text and multi_image is None):
+        st.warning("Isi teks, upload gambar, atau keduanya!")
+        st.session_state.multimodal_mix_recommendations = None
+
+    if st.session_state.get('multimodal_mix_recommendations') is not None:
+        st.success("Menampilkan rekomendasi hasil pencarian multimodal Anda:")
+        display_product_grid(st.session_state.multimodal_mix_recommendations, key_prefix="multimodal_mix")
+    else:
+        st.subheader("Jelajahi Produk Kami")
+        random_products = get_random_products(conn)
+        display_product_grid(random_products, key_prefix="multimodal_mix_random")

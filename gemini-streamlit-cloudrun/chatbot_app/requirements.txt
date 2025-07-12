@@ -1,14 +1,23 @@
-# Main Streamlit and Google Cloud libraries
-streamlit
-google-cloud-aiplatform
-google-auth
-httpx
-psycopg2-binary
-pandas
+# --- Framework Utama & Google Cloud ---
+streamlit                             # Untuk membangun dan menjalankan antarmuka web aplikasi (UI/UX)
+google-cloud-aiplatform               # SDK untuk berinteraksi dengan layanan Google AI Platform, termasuk model Gemini
+google-auth                           # Untuk menangani otentikasi (login) ke layanan Google Cloud
+google-genai                          # SDK resmi dari Google untuk menggunakan model generatif seperti Gemini
+httpx                                 # Klien HTTP modern yang diperlukan oleh beberapa library Google untuk membuat permintaan web
 
-# Libraries for SigLIP model
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-transformers
-Pillow
-sentencepiece
+# --- Koneksi & Operasi Database ---
+psycopg2-binary                       # Adapter/penghubung antara Python dan database PostgreSQL
+pandas                                # Untuk memanipulasi dan menganalisis data, terutama data tabel dari database
+sqlalchemy                            # Toolkit SQL dan ORM untuk mempermudah interaksi dengan database dari Python
+pydantic                              # Untuk validasi data, memastikan struktur data yang digunakan sudah benar
+pgvector                              # Ekstensi khusus untuk PostgreSQL agar bisa menyimpan dan mencari data vektor (untuk RAG)
+python-dotenv                         # Untuk memuat variabel lingkungan (seperti API key) dari file .env
+
+# --- Model Embedding & Machine Learning ---
+--extra-index-url https://download.pytorch.org/whl/cpu # Menunjuk ke repositori khusus untuk PyTorch versi CPU
+torch                                 # Library utama untuk deep learning, dasar dari model embedding
+transformers                          # Library dari Hugging Face untuk memuat model-model canggih seperti SigLIP
+Pillow                                # Untuk membuka dan memanipulasi file gambar
+sentencepiece                         # Library untuk tokenisasi teks, yaitu memecah teks menjadi bagian-bagian kecil untuk diproses model
+numpy                                 # Fundamental untuk komputasi numerik, terutama untuk bekerja dengan array/vektor
+tqdm                                  # Untuk menampilkan progress bar (bilah kemajuan) yang informatif saat proses berjalan lama

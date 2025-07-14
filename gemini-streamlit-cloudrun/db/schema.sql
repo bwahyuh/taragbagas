@@ -1,5 +1,6 @@
 -- Skema tabel siap RAG
 CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE products (
     product_id SERIAL PRIMARY KEY,
     title TEXT,
@@ -13,3 +14,7 @@ CREATE TABLE products (
     image_path TEXT,
     combined_text TEXT
 );
+
+-- PERUBAHAN: Tambahkan perintah untuk membuat indeks HNSW
+CREATE INDEX ON products USING hnsw (text_embedding vector_l2_ops);
+CREATE INDEX ON products USING hnsw (image_embedding vector_l2_ops);

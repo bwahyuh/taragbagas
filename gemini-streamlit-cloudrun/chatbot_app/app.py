@@ -12,7 +12,7 @@ import streamlit as st
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 # --- Konfigurasi Global Aplikasi ---
-PROJECT_ID = "taragbagas-465109"  # Ganti dengan Project ID Anda
+PROJECT_ID = ""  # Ganti dengan Project ID Anda
 LOCATION = "us-central1"          # Ganti dengan region Anda, misal: asia-southeast1
 # Kita tidak lagi butuh GenerateContentConfig atau ThinkingConfig di sini
 import psycopg2
@@ -44,11 +44,11 @@ def get_db_connection():
     """Gets a database connection and caches it for the session."""
     try:
         conn = psycopg2.connect(
-            host="34.50.104.207",
+            host="",
             port="5432",
             database="postgres",
             user="postgres",
-            password="bagaswahyu"
+            password=""
         )
         return conn
     except psycopg2.OperationalError as e:

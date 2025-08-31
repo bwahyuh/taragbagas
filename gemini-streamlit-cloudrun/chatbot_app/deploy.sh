@@ -112,7 +112,7 @@ echo "🏗️ Memulai proses build dengan Cloud Build..."
 gcloud builds submit . \
   --project="$GOOGLE_CLOUD_PROJECT" \
   --tag "$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT/$AR_REPO/$SERVICE_NAME:latest" \
-  --service-account="$DEPLOYER_SA_EMAIL" \
+  --service-account="$DEPLOYER_SA_FULL_PATH" \
   --gcs-log-dir="${LOGS_BUCKET}/logs"
 
 echo "✅ Build selesai."

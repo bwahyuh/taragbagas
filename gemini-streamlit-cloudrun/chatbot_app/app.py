@@ -22,8 +22,8 @@ from transformers import AutoModel, AutoProcessor
 from vertexai.generative_models import GenerativeModel, Part
 
 # --- Global Application Configuration ---
-PROJECT_ID = ""
-LOCATION = ""
+PROJECT_ID = "taragbagas-468109"
+LOCATION = "us-central1"
 
 # --- Vertex AI Initialization ---
 try:
@@ -41,11 +41,11 @@ def get_db_connection():
     """Gets a database connection and caches it for the session."""
     try:
         conn = psycopg2.connect(
-            host="",
+            host="34.55.47.94",
             port="5432",
-            database="",
-            user="",
-            password=""
+            database="postgres",
+            user="postgres",
+            password="Tamvan90."
         )
         return conn
     except psycopg2.OperationalError as e:
@@ -486,12 +486,15 @@ with tab5:
                     query_vector, search_query = None, None
                     if text_vector is not None and image_vector is not None:
                         query_vector = (text_vector + image_vector) / 2
+                        # --- PERUBAHAN 1: Mengambil 10 produk kandidat ---
                         search_query = "SELECT * FROM products ORDER BY image_embedding <=> %s::vector LIMIT 10;"
                     elif image_vector is not None:
                         query_vector = image_vector
+                        # --- PERUBAHAN 1: Mengambil 10 produk kandidat ---
                         search_query = "SELECT * FROM products ORDER BY image_embedding <=> %s::vector LIMIT 10;"
                     elif text_vector is not None:
                         query_vector = text_vector
+                        # --- PERUBAHAN 1: Mengambil 10 produk kandidat ---
                         search_query = "SELECT * FROM products ORDER BY text_embedding <=> %s::vector LIMIT 10;"
 
                     if query_vector is not None and search_query:
@@ -508,7 +511,7 @@ with tab5:
                 except Exception as e:
                     st.error(f"An error occurred while fetching data from the database: {e}")
                 
-                # --- FINAL, MOST ROBUST PROMPT ---
+                # --- PERUBAHAN 2: Mengubah instruksi pada prompt ---
                 final_prompt = f"""
                 You are 'SoleMate', an expert and friendly AI shopping assistant for a high-end shoe store.
                 Your primary goal is to help users find the perfect shoes. You must be conversational and handle various situations gracefully.
@@ -517,8 +520,8 @@ with tab5:
                 **Step 1: Determine the User's Intent.**
                 Based on the `USER'S INPUT`, classify the intent into one of three categories:
                 1. `greeting_or_smalltalk`: The user is making a simple conversational gesture (e.g., "hello", "thanks", "how are you?").
-                2. `product_query`: The user is asking about shoes, looking for recommendations, or describing a type of shoe. This includes queries that use a non-shoe item as a style or color reference.
-                3. `off_topic_query`: The user's query is about something completely unrelated to footwear, AND their text does not mention shoes.
+                2. `product_query`: The user is asking about shoes, looking for recommendations, or describing a type of shoe.
+                3. `off_topic_query`: The user's query is about something completely unrelated to footwear.
 
                 **Step 2: Formulate a Response Based on the Intent.**
                 Construct your JSON output according to the following rules:
@@ -527,14 +530,11 @@ with tab5:
                 **RULE A: If intent is `greeting_or_smalltalk`:**
                 - `response_type`: "greeting"
                 - `message`: A warm, friendly, and brief conversational reply.
-                - **Example:** {{"response_type": "greeting", "message": "Hello there! How can I help you find the perfect pair of shoes today?"}}
 
                 ---
                 **RULE B: If intent is `off_topic_query`:**
                 - `response_type`: "off_topic"
-                - `message`: Politely state that you are a shoe specialist and cannot help with non-footwear items. Use the `IMAGE_CONTENT_DESCRIPTION` to make your response more specific and helpful, acknowledging what the user showed you.
-                - **CRITICAL**: This rule applies ONLY IF the `User Text` does NOT contain words like 'shoe', 'sneaker', 'boot', 'sandal', 'footwear', etc. If the text mentions shoes, it is a `product_query` even if the image is not a shoe.
-                - **Example:** {{"response_type": "off_topic", "message": "It looks like you're searching for a '{image_content_description}'. As a footwear specialist, I'm afraid we don't carry that kind of product. Is there a pair of shoes I can help you find?"}}
+                - `message`: Politely state that you are a shoe specialist and cannot help with non-footwear items.
 
                 ---
                 **RULE C: If intent is `product_query`:**
@@ -542,11 +542,11 @@ with tab5:
                 - Analyze the `PRODUCT CONTEXT`.
                 - If context is empty or irrelevant, provide a `reasoning` message saying you couldn't find a match and an empty `recommendations` list.
                 - If context is relevant:
-                    - `reasoning`: A helpful, detailed explanation in Markdown. Start with a friendly opening paragraph. If the user provided an image as a reference (even a non-shoe one), acknowledge it (e.g., "Finding shoes to match your {image_content_description} is a great idea!"). Then, for EACH recommended product, create a numbered list item with the following nested format:
+                    - `reasoning`: A helpful, detailed explanation in Markdown. Start with a friendly opening paragraph. Then, for **EACH** product provided in the context, create a numbered list item with the following nested format:
                         1. **[Full Product Title]**
                            - **Query Match**: Briefly explain why this product is a good match for the user's request.
-                           - **Key Features**: Based on the `features_clean` column, write a detailed 2-4 sentence description summarizing the most prominent features and explaining their benefits to the user.
-                    - `recommendations`: A list of JSON objects, each with the exact `title` (lowercase) of a recommended product.
+                           - **Key Features**: Based on the `features_clean` column, write a detailed 2-4 sentence description summarizing the most prominent features.
+                    - `recommendations`: A list of JSON objects, each with the exact `title` (lowercase) of **ALL** products from the `PRODUCT CONTEXT`.
 
                 ---
                 **PRODUCT CONTEXT (from database vector search):**

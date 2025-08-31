@@ -46,7 +46,6 @@ export DEPLOYER_SA_EMAIL="${DEPLOYER_SA}@${GOOGLE_CLOUD_PROJECT}.iam.gserviceacc
 export DEPLOYER_SA_FULL_PATH="projects/${GOOGLE_CLOUD_PROJECT}/serviceAccounts/${DEPLOYER_SA_EMAIL}"
 export PROJECT_NUMBER=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format="value(projectNumber)")
 export CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
-export LOGS_BUCKET_URI="gs://${GOOGLE_CLOUD_PROJECT}_cloudbuild/logs"
 
 
 echo "============================================="
@@ -54,7 +53,6 @@ echo "Project ID:      $GOOGLE_CLOUD_PROJECT"
 echo "Service:         $SERVICE_NAME"
 echo "Deployer SA:     $DEPLOYER_SA_EMAIL"
 echo "Build SA Path:   $DEPLOYER_SA_FULL_PATH"
-echo "Logs Bucket:     $LOGS_BUCKET_URI"
 echo "============================================="
 
 
@@ -100,6 +98,14 @@ if ! gcloud artifacts repositories describe "$AR_REPO" --location="$GOOGLE_CLOUD
       --repository-format=Docker --quiet
 fi
 
+# --- 5b. Pastikan GCS Bucket untuk Logs Ada ---
+LOGS_BUCKET="gs://${GOOGLE_CLOUD_PROJECT}_cloudbuild"
+echo "🔄 Memeriksa/Membuat GCS Bucket untuk Logs di $LOGS_BUCKET..."
+if ! gcloud storage buckets describe "$LOGS_BUCKET" --project="$GOOGLE_CLOUD_PROJECT" > /dev/null 2>&1; then
+    echo "Membuat GCS Bucket: $LOGS_BUCKET..."
+    gcloud storage buckets create "$LOGS_BUCKET" --project="$GOOGLE_CLOUD_PROJECT" --location="$GOOGLE_CLOUD_REGION"
+fi
+
 
 # --- 6. Build & Submit Container Image ---
 echo "🏗️ Memulai proses build dengan Cloud Build..."
@@ -107,7 +113,7 @@ gcloud builds submit . \
   --project="$GOOGLE_CLOUD_PROJECT" \
   --tag "$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT/$AR_REPO/$SERVICE_NAME:latest" \
   --service-account="$DEPLOYER_SA_EMAIL" \
-  --gcs-log-dir="$LOGS_BUCKET_URI"
+  --gcs-log-dir="${LOGS_BUCKET}/logs"
 
 echo "✅ Build selesai."
 

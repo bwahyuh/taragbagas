@@ -22,7 +22,7 @@ from transformers import AutoModel, AutoProcessor
 from vertexai.generative_models import GenerativeModel, Part
 
 # --- Global Application Configuration ---
-PROJECT_ID = "taragbagas-468109"
+PROJECT_ID = ""
 LOCATION = "us-central1"
 
 # --- Vertex AI Initialization ---
@@ -41,11 +41,11 @@ def get_db_connection():
     """Gets a database connection and caches it for the session."""
     try:
         conn = psycopg2.connect(
-            host="34.55.47.94",
+            host="",
             port="5432",
             database="postgres",
             user="postgres",
-            password="Tamvan90."
+            password=""
         )
         return conn
     except psycopg2.OperationalError as e:
